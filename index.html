@@ -43,7 +43,8 @@
   .verdict { font-size:15px; font-weight:600; }
   .pill { display:inline-block; margin:2px 4px 2px 0; padding:2px 8px; border-radius:12px; font-size:12px; }
   .hide { display:none; }
-  button.sell { padding:1px 7px; font-size:12px; color:var(--down); border-color:#86efac; margin-right:2px; }
+  button.sell, button.buy { padding:1px 7px; font-size:12px; color:var(--down); border-color:#86efac; margin-right:2px; }
+  button.buy { color:var(--up); border-color:#fca5a5; }
   details.note { margin-top:6px; } details.note summary { cursor:pointer; color:var(--acc); }
   @media (max-width:640px){ main{ padding:8px 10px 40px; } .chart{ height:280px; } .chart.tall{ height:360px; } td,th{ padding:5px 6px; } .hm{ display:none; } }
 </style>
@@ -51,7 +52,7 @@
 <body>
 <header>
   <h1>台股看盤</h1>
-  <span id="hdr" class="sub">載入中…</span>
+  <span id="hdr" class="sub">載入中…</span><span id="sync" class="sub" style="color:#fbbf24"></span>
   <span style="flex:1"></span>
   <button class="ghost" style="color:#fff;background:none;border-color:#475569" onclick="refreshAll()">重新整理</button>
 </header>
@@ -77,7 +78,7 @@
   <section id="t-ETF" class="hide"><div class="card"><h2>ETF 即時淨值與溢價 <input id="efilter" placeholder="篩選代號／名稱" oninput="drawETF()" style="width:160px"></h2>
     <div class="tbl" id="etf"></div><div class="note">預估淨值與溢價是投信每 15 秒左右估的（證交所轉發）；溢價＝市價高於淨值，買貴了。</div></div></section>
   <section id="t-持股" class="hide"><div class="card"><h2>損益（兩個帳號）</h2><div id="pnl"><span class="mute">載入中…</span></div></div><div class="card"><h2>持股 <span id="holdbtns"></span>
-    <span class="note" id="holdnote"></span></h2><div class="tbl" id="hold"></div>
+    <span class="note" id="holdnote"></span></h2><div id="buynew" class="hide"></div><div class="tbl" id="hold"></div>
     <div class="note">下面那行＝昨晚的判斷（綠賣、橘警戒、紅續抱）。現價綠底＝跌停、紅底＝漲停。</div></div></section>
 </main>
 <script>
@@ -97,11 +98,37 @@ function num(v) { var x = parseFloat(String(v).replace(/,/g, '')); return isNaN(
 function fmt(v, d) { return v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d}); }
 function sgn(v, d) { return v === null || v === undefined || isNaN(v) ? '—' : (v > 0 ? '+' : '') + fmt(v, d); }
 function cls(v) { return v > 0 ? 'up' : v < 0 ? 'down' : ''; }
-var WRITE = {apiSaveHoldings: 1, apiSell: 1};
+var WRITE = {apiSaveHoldings: 1, apiSell: 1, apiBuy: 1};
+// 2026-11-25 量過：每問一次 Google 本身就要 1.4～1.9 秒（伺服器自己只花 0.1～1.6 秒）→ 讀的先拿這台瀏覽器上次存的立刻畫，背景再問新的。
+// ok(v, meta)：meta.cached＝這是上次的（meta.at＝上次幾點拿到的）；新的回來跟上次一模一樣就不再呼叫 ok（不重畫、不閃）。
+var CACHE = {apiData: 1, apiMarket: 1, apiDaily: 1, apiIntraday: 1, apiHoldings: 1, apiETF: 1};
+var PENDING = 0;
+function syncBadge(d) {
+  PENDING = Math.max(0, PENDING + d);
+  var el = $('sync'); if (el) { el.textContent = PENDING ? '⟳ 更新中' : ''; }
+}
+function cget(k) { try { var c = localStorage.getItem(k); return c ? JSON.parse(c) : null; } catch (e) { return null; } }
+function cput(k, s) {
+  try { localStorage.setItem(k, s); } catch (e) {                 // 滿了：清掉舊的快取再試一次
+    try { Object.keys(localStorage).forEach(function (x) { if (x.indexOf('c:') === 0) { localStorage.removeItem(x); } }); localStorage.setItem(k, s); } catch (e2) {}
+  }
+}
 function run(fn, args, ok, fail) {
   var t0 = Date.now(), lab = '[api] ' + fn + (args && args.length ? '(' + String(args).slice(0, 20) + ')' : '');
-  var bad = function (m) { console.log(lab, 'FAIL', Date.now() - t0, 'ms'); (fail || function (x) { alert(x); })(m); };
-  var good = function (v) { console.log(lab, Date.now() - t0, 'ms'); ok(v); };
+  var ck = CACHE[fn] ? 'c:' + fn + ':' + JSON.stringify(args || []) : null, old = ck ? cget(ck) : null, oldS = old ? JSON.stringify(old.v) : null;
+  if (old) { try { ok(old.v, {cached: true, at: old.t}); } catch (e) { console.log(e); } }
+  if (ck) { syncBadge(1); }
+  var done = function () { if (ck) { syncBadge(-1); } };
+  var bad = function (m) { done(); console.log(lab, 'FAIL', Date.now() - t0, 'ms');
+    if (old) { $('sync').textContent = '⚠ 有一項更新失敗，顯示的是上次的'; return; }
+    (fail || function (x) { alert(x); })(m); };
+  var good = function (v) {
+    done(); console.log(lab, Date.now() - t0, 'ms');
+    var s = ck ? JSON.stringify(v) : null;
+    if (ck) { cput(ck, JSON.stringify({t: Date.now(), v: v})); }
+    if (old && s === oldS) { return; }
+    ok(v, {cached: false});
+  };
   if (!API) {                                      // 在 Apps Script 裡：google.script.run
     var r = google.script.run.withSuccessHandler(good).withFailureHandler(function (e) { bad(String(e && e.message || e)); });
     r[fn].apply(r, [KEY].concat(args || []));
@@ -152,7 +179,7 @@ function goHealth(id) { show('健診'); $('hid').value = id; health(); }
 // ---------- 大盤
 function loadMarket() {
   $('mk').innerHTML = '<span class="mute">抓即時報價…</span>';
-  run('apiMarket', [], function (rows) {
+  run('apiMarket', [], function (rows, mt) {
     var s = '<table><tr><th>項目</th><th class="n">價格</th><th class="n">漲跌</th><th class="n">幅度</th><th class="n">時間</th></tr>';
     rows.forEach(function (r) {
       var d = /台幣|美債/.test(r.name) ? 3 : 2;
@@ -161,7 +188,8 @@ function loadMarket() {
         + '</td><td class="n ' + cls(r.pct) + '"><b>' + sgn(r.pct, 2) + '%</b></td><td class="n mute">' + esc(r.time || '') + '</td></tr>';
     });
     $('mk').innerHTML = s + '</table>';
-    $('mk-time').textContent = '更新 ' + new Date().toLocaleTimeString('zh-TW', {hour: '2-digit', minute: '2-digit'});
+    var at = new Date(mt && mt.cached ? mt.at : Date.now()).toLocaleTimeString('zh-TW', {hour: '2-digit', minute: '2-digit'});
+    $('mk-time').textContent = mt && mt.cached ? '（' + at + ' 的，更新中…）' : '更新 ' + at;
     // 盤前／盤中估計：Code.gs 的 _preRisk 用台指期漲跌套昨晚的對照表（05:00～13:50 才有；收盤後等今晚重算）
     var pr = rows.filter(function (r) { return r.risk; })[0];
     if (pr) {
@@ -525,7 +553,11 @@ function drawETF() {
 var H = null;
 function loadHold() {
   $('hold').innerHTML = '<span class="mute">抓報價…</span>';
-  run('apiHoldings', [], function (d) { H = d; drawHold(); }, function (m) { $('hold').innerHTML = '<span class="err">' + esc(m) + '</span>'; });
+  run('apiHoldings', [], function (d) {
+    var busy = HEDIT || document.querySelector('#hold tr.sellrow:not(.hide)') || ($('buynew') && !$('buynew').classList.contains('hide'));
+    if (busy && H && H.quotes) { H.quotes = d.quotes; return; }    // 填表單時只換報價，不重畫
+    H = d; drawHold();
+  }, function (m) { $('hold').innerHTML = '<span class="err">' + esc(m) + '</span>'; });
 }
 /** 賣出＝綠字（台股綠是跌／賣）、警戒＝橘、續抱＝紅。 */
 function vcls(t) { t = String(t || ''); return /^(賣出|大盤空手期)/.test(t) ? 'down b' : /^(警戒|可留可換)/.test(t) ? 'warn' : /^續抱/.test(t) ? 'up' : 'mute'; }
@@ -549,7 +581,7 @@ function trendBadge(st, small) {
 var HEDIT = false;
 function holdBtns() {
   $('holdbtns').innerHTML = HEDIT ? '<button class="ghost" onclick="addRow()">＋ 新增一列</button> <button class="act" onclick="saveHold()">儲存</button> <button class="ghost" onclick="HEDIT=false;loadHold()">取消</button>'
-    : '<button class="ghost" onclick="HEDIT=true;drawHold()">編輯</button>';
+    : '<button class="ghost" onclick="buyNew()">＋ 買進</button> <button class="ghost" onclick="HEDIT=true;drawHold()">編輯</button>';
 }
 function drawHold() {
   var rows = (H.rows || []).slice(1), q = H.quotes || {}, v = H.verdict || {};
@@ -572,7 +604,7 @@ function drawHold() {
     var p = q[r[0]] || {}, n = num(r[3]), c = num(r[4]), pr = p.price, pl = pr && c ? (pr / c - 1) * 100 : null;
     if (pr && n) { tot += pr * n; } if (c && n) { cost += c * n; }
     var vv = v[r[0]] || {}, lk = String(p.lock || ''), lc = /跌停/.test(lk) ? ' lock-dn' : /漲停/.test(lk) ? ' lock-up' : '';
-    s += '<tr class="h1"><td class="nm"><button class="ghost sell" onclick="sellForm(' + (ri + 1) + ')" title="記一筆賣出">賣</button> <b>' + esc(r[0]) + '</b> ' + esc(r[1] || vv.name || '') + '<small>' + esc(r[2] || '') + '</small></td>'
+    s += '<tr class="h1"><td class="nm"><button class="ghost sell" onclick="sellForm(' + (ri + 1) + ')" title="記一筆賣出">賣</button><button class="ghost buy" onclick="buyForm(' + (ri + 1) + ')" title="加碼：合併到這一列">買</button> <b>' + esc(r[0]) + '</b> ' + esc(r[1] || vv.name || '') + '<small>' + esc(r[2] || '') + '</small></td>'
       + '<td class="n hm">' + fmt(n, 0) + '</td><td class="n hm">' + fmt(c, 2) + '</td>'
       + '<td class="n' + lc + '"' + (lk ? ' title="' + esc(lk) + '"' : '') + '>' + fmt(pr, 2) + '</td><td class="n ' + cls(p.pct) + '">' + sgn(p.pct, 2) + '</td>'
       + '<td class="n ' + cls(pl) + '"><b>' + sgn(pl, 1) + '</b></td><td class="n hm ' + cls(pl) + '">' + sgn(pr && n && c ? (pr - c) * n : null, 0) + '</td>'
@@ -625,14 +657,61 @@ function drawPnl() {
 /** 「賣」：第 i 列（H.rows 的索引）下面展開一列，填股數（預設全部）、成交價（預設現價），按確定才送。 */
 function sellForm(i) {
   var r = H.rows[i], el = $('sell' + i); if (!r || !el) { return; }
-  if (!el.classList.contains('hide')) { el.classList.add('hide'); return; }
+  if (!el.classList.contains('hide') && el.dataset.mode === 'sell') { el.classList.add('hide'); return; }
   var p = (H.quotes || {})[r[0]] || {}, n = num(r[3]);
+  el.dataset.mode = 'sell';
   el.firstChild.innerHTML = '<div class="row" style="padding:6px 0"><b>賣出 ' + esc(r[0]) + ' ' + esc(r[1] || '') + '</b>'
     + '<label>股數 <input id="sq' + i + '" type="number" inputmode="numeric" min="1" value="' + (n || '') + '" style="width:100px;text-align:right"></label>'
     + '<label>成交價 <input id="sp' + i + '" type="number" inputmode="decimal" step="0.01" value="' + (p.price ? Number(p.price).toFixed(2) : '') + '" style="width:100px;text-align:right"></label>'
     + '<button class="act" onclick="doSell(' + i + ')">確定賣出</button> <button class="ghost" onclick="sellForm(' + i + ')">取消</button>'
-    + '<span class="note" id="sn' + i + '">持有 ' + fmt(n, 0) + ' 股；賣光這一列會刪掉，另外記進試算表的「賣出紀錄」</span></div>';
+    + '<span class="note" id="sn' + i + '">持有 ' + fmt(n, 0) + ' 股；賣光這一列會刪掉，另外記進試算表的「買賣紀錄」</span></div>';
   el.classList.remove('hide');
+}
+/** 「買」：第 i 列下面展開；股數＋成交價，送出後跟這一列合併（股數相加、成本加權平均）。 */
+function buyForm(i) {
+  var r = H.rows[i], el = $('sell' + i); if (!r || !el) { return; }
+  if (!el.classList.contains('hide') && el.dataset.mode === 'buy') { el.classList.add('hide'); return; }
+  var p = (H.quotes || {})[r[0]] || {}, n = num(r[3]), c = num(r[4]);
+  el.dataset.mode = 'buy';
+  el.firstChild.innerHTML = '<div class="row" style="padding:6px 0"><b class="up">買進 ' + esc(r[0]) + ' ' + esc(r[1] || '') + '</b>'
+    + '<label>股數 <input id="bq' + i + '" type="number" inputmode="numeric" min="1" value="1000" style="width:100px;text-align:right"></label>'
+    + '<label>成交價 <input id="bp' + i + '" type="number" inputmode="decimal" step="0.01" value="' + (p.price ? Number(p.price).toFixed(2) : '') + '" style="width:100px;text-align:right"></label>'
+    + '<button class="act" onclick="doBuy(' + i + ')">確定買進</button> <button class="ghost" onclick="buyForm(' + i + ')">取消</button>'
+    + '<span class="note" id="bn' + i + '">原本 ' + fmt(n, 0) + ' 股、成本 ' + fmt(c, 2) + '；會合併成一列（成本變加權平均）</span></div>';
+  el.classList.remove('hide');
+}
+function doBuy(i) {
+  var r = H.rows[i], q = num($('bq' + i).value), p = num($('bp' + i).value);
+  if (!(q > 0) || !(p > 0)) { $('bn' + i).textContent = '股數和成交價都要填'; return; }
+  if (!confirm('買進 ' + r[0] + ' ' + fmt(q, 0) + ' 股，成交價 ' + fmt(p, 2) + '？（合併到原本那一列）')) { return; }
+  $('bn' + i).textContent = '儲存中…';
+  run('apiBuy', [i, r[0], r[2] || '', q, p], buyDone, function (m) { $('bn' + i).textContent = m; });
+}
+function buyDone(x) {
+  $('holdnote').textContent = '已記：買 ' + x.id + (x.merged ? '，合併後 ' + fmt(x.shares, 0) + ' 股、成本 ' + fmt(x.cost, 2) : '，新增一列 ' + fmt(x.shares, 0) + ' 股');
+  $('buynew').classList.add('hide'); loadHold();
+}
+/** 「＋ 買進」：代號、帳戶、股數、成交價；手上已經有同代號（同帳戶）的會合併，沒有才新增一列。 */
+function buyNew() {
+  var el = $('buynew');
+  if (!el.classList.contains('hide')) { el.classList.add('hide'); return; }
+  var accts = []; (H.rows || []).slice(1).forEach(function (r) { if (r[2] && accts.indexOf(r[2]) < 0) { accts.push(r[2]); } });
+  el.innerHTML = '<div class="row" style="padding:6px 0 10px"><b class="up">買進</b>'
+    + '<label>代號 <input id="nbid" list="hlist" placeholder="2330" style="width:90px"></label>'
+    + (accts.length ? '<label>帳戶 <select id="nba">' + accts.map(function (a) { return '<option>' + esc(a) + '</option>'; }).join('') + '</select></label>' : '<input id="nba" type="hidden" value="">')
+    + '<label>股數 <input id="nbq" type="number" inputmode="numeric" min="1" value="1000" style="width:90px;text-align:right"></label>'
+    + '<label>成交價 <input id="nbp" type="number" inputmode="decimal" step="0.01" style="width:90px;text-align:right"></label>'
+    + '<button class="act" onclick="doBuyNew()">確定買進</button> <button class="ghost" onclick="buyNew()">取消</button>'
+    + '<span class="note" id="nbn">手上已經有同一檔（同帳戶）會合併成一列</span></div>';
+  el.classList.remove('hide');
+}
+function doBuyNew() {
+  var id = String($('nbid').value || '').trim().toUpperCase().split(/\s/)[0], a = $('nba').value, q = num($('nbq').value), p = num($('nbp').value);
+  if (!/^[0-9A-Z]{4,6}$/.test(id)) { $('nbn').textContent = '代號要 4～6 碼'; return; }
+  if (!(q > 0) || !(p > 0)) { $('nbn').textContent = '股數和成交價都要填'; return; }
+  if (!confirm('買進 ' + id + ' ' + fmt(q, 0) + ' 股，成交價 ' + fmt(p, 2) + (a ? '（' + a + '）' : '') + '？')) { return; }
+  $('nbn').textContent = '儲存中…';
+  run('apiBuy', [0, id, a, q, p], buyDone, function (m) { $('nbn').textContent = m; });
 }
 function doSell(i) {
   var r = H.rows[i], q = num($('sq' + i).value), p = num($('sp' + i).value), n = num(r[3]);
