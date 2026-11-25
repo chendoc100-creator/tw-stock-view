@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --ink:#1d1f23; --mute:#6b7280; --line:#e5e7eb; --up:#d0021b; --down:#1a7f37; --warn:#b8860b; --acc:#2563eb; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 -apple-system,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif; }
+  header { background:#111827; color:#fff; padding:10px 16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; font-weight:600; }
+  header .sub { color:#cbd5e1; font-size:12px; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; font-weight:600; }
+  .b-up { background:#fde2e4; color:var(--up); } .b-down { background:#dcfce7; color:var(--down); } .b-warn { background:#fef3c7; color:#92400e; } .b-mute { background:#e5e7eb; color:#374151; }
+  nav { display:flex; gap:4px; overflow-x:auto; background:#fff; border-bottom:1px solid var(--line); padding:0 8px; position:sticky; top:0; z-index:5; }
+  nav button { border:0; background:none; padding:10px 12px; font-size:14px; color:var(--mute); border-bottom:2px solid transparent; white-space:nowrap; cursor:pointer; }
+  nav button.on { color:var(--ink); border-bottom-color:var(--acc); font-weight:600; }
+  main { max-width:1100px; margin:0 auto; padding:12px 16px 40px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:12px; }
+  .card h2 { font-size:15px; margin:0 0 8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .seg button { border:1px solid var(--line); background:#fff; padding:4px 10px; border-radius:6px; cursor:pointer; font-size:13px; }
+  .seg button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+  .tbl { width:100%; overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th { text-align:left; color:var(--mute); font-weight:500; border-bottom:1px solid var(--line); padding:6px 8px; white-space:nowrap; }
+  td { padding:6px 8px; border-bottom:1px solid #f1f2f4; white-space:nowrap; }
+  td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; }
+  .up { color:var(--up); } .down { color:var(--down); } .mute { color:var(--mute); } .warn { color:#b45309; } .b { font-weight:600; }
+  .lock-dn { background:#dcfce7; } .lock-up { background:#fde2e4; }
+  table.hold tr.h1 td { border-bottom:0; padding-bottom:2px; } table.hold tr.h2 td { padding-top:0; font-size:12px; white-space:normal; }
+  table.hold td.nm { white-space:normal; } table.hold td.nm small { color:var(--mute); margin-left:4px; }
+  .chart { width:100%; height:340px; } .chart.sm { height:260px; } .chart.tall { height:460px; }
+  .note { color:var(--mute); font-size:12px; margin-top:6px; }
+  .err { color:var(--up); font-size:13px; }
+  input, select { font-size:14px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; }
+  button.act { background:var(--acc); color:#fff; border:0; border-radius:6px; padding:6px 12px; cursor:pointer; font-size:13px; }
+  button.ghost { background:#fff; border:1px solid var(--line); border-radius:6px; padding:5px 10px; cursor:pointer; font-size:13px; }
+  .grid4 { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px; }
+  .kv { margin:0; padding-left:16px; } .kv li { margin:2px 0; }
+  .verdict { font-size:15px; font-weight:600; }
+  .pill { display:inline-block; margin:2px 4px 2px 0; padding:2px 8px; border-radius:12px; font-size:12px; }
+  .hide { display:none; }
+  button.sell { padding:1px 7px; font-size:12px; color:var(--down); border-color:#86efac; margin-right:2px; }
+  details.note { margin-top:6px; } details.note summary { cursor:pointer; color:var(--acc); }
+  @media (max-width:640px){ main{ padding:8px 10px 40px; } .chart{ height:280px; } .chart.tall{ height:360px; } td,th{ padding:5px 6px; } .hm{ display:none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>台股看盤</h1>
+  <span id="hdr" class="sub">載入中…</span>
+  <span style="flex:1"></span>
+  <button class="ghost" style="color:#fff;background:none;border-color:#475569" onclick="refreshAll()">重新整理</button>
+</header>
+<nav id="tabs"></nav>
+<main>
+  <section id="t-大盤">
+    <div class="card"><h2>大盤狀態</h2><div id="trend"><span class="mute">載入中…</span></div></div>
+    <div class="card"><h2>國際股市 <span id="mk-time" class="sub mute" style="font-weight:400;font-size:12px"></span></h2><div class="tbl" id="mk"></div></div>
+    <div class="card"><h2>大盤風險指數 <span class="mute" style="font-weight:400;font-size:12px">0 最危險、100 最安全｜溫度計，不是賣出訊號</span></h2>
+      <div id="risk"><span class="mute">載入中…</span></div><div class="note" id="risknow"></div><div id="rchart" class="chart sm"></div><div class="note" id="rnote2"></div></div>
+    <div class="card"><h2>K 線 <span class="seg" id="kseg"></span><span class="seg" id="pseg"></span></h2><div id="kchart" class="chart tall"></div><div class="note" id="knote"></div></div>
+    <div class="card"><h2>江玻圖（分時＋均價＋量）<span class="seg" id="iseg"></span></h2><div id="ichart" class="chart"></div><div class="note" id="inote"></div></div>
+  </section>
+  <section id="t-名單" class="hide"><div class="card"><h2>模型名單 <span id="lst-status" class="badge b-mute"></span></h2><div class="tbl" id="lst"></div>
+    <div class="note">月營收創高突破＋主流股突破，最多 10 檔。隔天開盤買、訊號 5 個交易日內有效；賣：賺 20% 先賣一半，其餘收盤連 3 天在 60 日線下全賣。</div></div></section>
+  <section id="t-排名" class="hide"><div class="card"><h2>排名 <select id="rsel" onchange="drawRank()"></select></h2><div class="tbl" id="rank"></div><div class="note" id="rnote"></div></div></section>
+  <section id="t-警示" class="hide"><div id="alerts"></div></section>
+  <section id="t-健診" class="hide">
+    <div class="card"><div class="row"><input id="hid" list="hlist" placeholder="代號或名稱，例如 2330" style="width:200px">
+      <datalist id="hlist"></datalist><button class="act" onclick="health()">健診</button><span class="note" id="hnote"></span></div></div>
+    <div id="hout"></div>
+  </section>
+  <section id="t-ETF" class="hide"><div class="card"><h2>ETF 即時淨值與溢價 <input id="efilter" placeholder="篩選代號／名稱" oninput="drawETF()" style="width:160px"></h2>
+    <div class="tbl" id="etf"></div><div class="note">預估淨值與溢價是投信每 15 秒左右估的（證交所轉發）；溢價＝市價高於淨值，買貴了。</div></div></section>
+  <section id="t-持股" class="hide"><div class="card"><h2>損益（兩個帳號）</h2><div id="pnl"><span class="mute">載入中…</span></div></div><div class="card"><h2>持股 <span id="holdbtns"></span>
+    <span class="note" id="holdnote"></span></h2><div class="tbl" id="hold"></div>
+    <div class="note">下面那行＝昨晚的判斷（綠賣、橘警戒、紅續抱）。現價綠底＝跌停、紅底＝漲停。</div></div></section>
+</main>
+<script>
+var KEY = '';   // 看網頁的鑰匙（doGet 塞進來的）；每支 api* 都要帶
+var API = "https://script.google.com/macros/s/AKfycbzel6anm0vMKWlxMsVjlEX4b-sLvj98cOJ9cLMmI19OCofZOEOJXx0TV53uQtVEMvs/exec";             // GitHub Pages 那份會換成 Apps Script 的 /exec 網址（webapp_gs.render_pages）；空白＝在 Apps Script 裡跑
+// GitHub Pages 那份沒有 doGet 塞鑰匙：第一次用 …/#k=鑰匙 開，存在這台瀏覽器（localStorage），網址列的鑰匙隨即拿掉
+if (KEY.indexOf('<' + '?') === 0 || !KEY) {
+  var mk = (location.hash || '').match(/k=([A-Za-z0-9_-]+)/);
+  try { if (mk) { localStorage.setItem('tw_key', mk[1]); } KEY = mk ? mk[1] : (localStorage.getItem('tw_key') || ''); } catch (e) { KEY = mk ? mk[1] : ''; }
+  if (mk) { history.replaceState(null, '', location.pathname + location.search); }
+}
+var TABS = ['大盤', '名單', '排名', '警示', '健診', 'ETF', '持股'];
+var D = null, ETF = null, kSym = '^TWII', iKind = 'TSE', charts = {};
+function $(id) { return document.getElementById(id); }
+function esc(s) { return String(s === undefined || s === null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function num(v) { var x = parseFloat(String(v).replace(/,/g, '')); return isNaN(x) ? null : x; }
+function fmt(v, d) { return v === null || v === undefined || isNaN(v) ? '—' : Number(v).toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d}); }
+function sgn(v, d) { return v === null || v === undefined || isNaN(v) ? '—' : (v > 0 ? '+' : '') + fmt(v, d); }
+function cls(v) { return v > 0 ? 'up' : v < 0 ? 'down' : ''; }
+var WRITE = {apiSaveHoldings: 1, apiSell: 1};
+function run(fn, args, ok, fail) {
+  var t0 = Date.now(), lab = '[api] ' + fn + (args && args.length ? '(' + String(args).slice(0, 20) + ')' : '');
+  var bad = function (m) { console.log(lab, 'FAIL', Date.now() - t0, 'ms'); (fail || function (x) { alert(x); })(m); };
+  var good = function (v) { console.log(lab, Date.now() - t0, 'ms'); ok(v); };
+  if (!API) {                                      // 在 Apps Script 裡：google.script.run
+    var r = google.script.run.withSuccessHandler(good).withFailureHandler(function (e) { bad(String(e && e.message || e)); });
+    r[fn].apply(r, [KEY].concat(args || []));
+    return;
+  }
+  // GitHub Pages：fetch 問 /exec（credentials 不帶 → Google 不會轉成 /u/4/）。寫入用 POST＋text/plain（不觸發 CORS 預檢）
+  var req = WRITE[fn] ? fetch(API, {method: 'POST', credentials: 'omit', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({api: fn, k: KEY, a: args || []})})
+                      : fetch(API + '?api=' + fn + '&k=' + encodeURIComponent(KEY) + '&a=' + encodeURIComponent(JSON.stringify(args || [])), {credentials: 'omit'});
+  req.then(function (res) { return res.json(); })
+     .then(function (j) { if (j.ok) { good(j.v); } else { bad(j.err || '伺服器回錯誤'); } })
+     .catch(function (e) { bad('連不上資料（' + String(e && e.message || e) + '）'); });
+}
+
+// ---------- 分頁
+function initTabs() {
+  $('tabs').innerHTML = TABS.map(function (t) { return '<button data-t="' + t + '">' + t + '</button>'; }).join('');
+  [].forEach.call($('tabs').children, function (b) { b.onclick = function () { show(b.dataset.t); }; });
+  var h = decodeURIComponent((location.hash || '').slice(1));
+  show(TABS.indexOf(h) >= 0 ? h : '大盤');
+}
+function show(t) {
+  TABS.forEach(function (x) { $('t-' + x).classList.toggle('hide', x !== t); });
+  [].forEach.call($('tabs').children, function (b) { b.classList.toggle('on', b.dataset.t === t); });
+  if (t === 'ETF' && !ETF) { loadETF(); }
+  if (t === '持股') { loadHold(); }
+  Object.keys(charts).forEach(function (k) { var c = charts[k]; if (c && c.el.offsetWidth) { c.chart.applyOptions({width: c.el.clientWidth}); if (c.redraw) { setTimeout(c.redraw, 50); } } });
+}
+
+// ---------- 表格
+function table(rows, opt) {
+  opt = opt || {};
+  if (!rows || !rows.length || (rows.length === 1 && rows[0].length <= 1)) { return '<div class="mute">（沒有）</div>'; }
+  var h = rows[0], numCol = h.map(function (c, j) { return rows.slice(1).every(function (r) { return r[j] === '' || num(r[j]) !== null; }) && !/代號|^.?日$|分點$|名稱|標的|領導/.test(c); });
+  var signCol = h.map(function (c) { return /漲跌|漲幅|後%|變化/.test(c); });
+  var s = '<table><tr>' + h.map(function (c, j) { return '<th class="' + (numCol[j] ? 'n' : '') + '">' + esc(c) + '</th>'; }).join('') + '</tr>';
+  rows.slice(1).forEach(function (r) {
+    s += '<tr>' + r.map(function (v, j) {
+      var x = num(v), c = numCol[j] ? 'n' : '';
+      if (signCol[j] && x !== null) { c += ' ' + cls(x); v = sgn(x, 2); }
+      if (j === 0 && opt.link && /^[0-9A-Z]{4,6}$/.test(v)) { return '<td><a href="#" onclick="goHealth(\'' + esc(v) + '\');return false">' + esc(v) + '</a></td>'; }
+      return '<td class="' + c + '">' + esc(v) + '</td>';
+    }).join('') + '</tr>';
+  });
+  return s + '</table>';
+}
+function goHealth(id) { show('健診'); $('hid').value = id; health(); }
+
+// ---------- 大盤
+function loadMarket() {
+  $('mk').innerHTML = '<span class="mute">抓即時報價…</span>';
+  run('apiMarket', [], function (rows) {
+    var s = '<table><tr><th>項目</th><th class="n">價格</th><th class="n">漲跌</th><th class="n">幅度</th><th class="n">時間</th></tr>';
+    rows.forEach(function (r) {
+      var d = /台幣|美債/.test(r.name) ? 3 : 2;
+      if (r.err) { s += '<tr><td>' + esc(r.name) + '</td><td colspan="4" class="mute">' + esc(r.err) + '</td></tr>'; return; }
+      s += '<tr><td>' + esc(r.name) + '</td><td class="n">' + fmt(r.price, d) + '</td><td class="n ' + cls(r.pct) + '">' + sgn(r.chg, d)
+        + '</td><td class="n ' + cls(r.pct) + '"><b>' + sgn(r.pct, 2) + '%</b></td><td class="n mute">' + esc(r.time || '') + '</td></tr>';
+    });
+    $('mk').innerHTML = s + '</table>';
+    $('mk-time').textContent = '更新 ' + new Date().toLocaleTimeString('zh-TW', {hour: '2-digit', minute: '2-digit'});
+    // 盤前／盤中估計：Code.gs 的 _preRisk 用台指期漲跌套昨晚的對照表（05:00～13:50 才有；收盤後等今晚重算）
+    var pr = rows.filter(function (r) { return r.risk; })[0];
+    if (pr) {
+      var p = pr.risk, m = (D && D.meta) || {}, lo = num(m.risk_lo) || 28, hi = num(m.risk_hi) || 71;
+      var c = p.est <= lo ? '#c2410c' : p.est >= hi ? '#1d4ed8' : '#374151';
+      $('risknow').innerHTML = '<b>' + (p.session === '日盤' ? '盤中' : '盤前') + '估計</b>：照現在台指期 ' + sgn(p.pct, 2) + '%（' + esc(p.time) + '）'
+        + (p.implied ? '、換算加權約 ' + fmt(p.implied, 0) : '') + '，今天收盤的風險指數約 <b style="color:' + c + '">' + fmt(p.est, 0) + '</b>'
+        + (p.night && p.session === '日盤' ? '　夜盤收盤 ' + sgn(p.night.pct, 2) + '%' : '')
+        + more(esc(m.risk_pre_note || ''));
+    } else { $('risknow').innerHTML = ''; }
+  }, function (m) { $('mk').innerHTML = '<span class="err">' + esc(m) + '</span>'; });
+}
+function seg(id, items, cur, fn) {
+  $(id).innerHTML = items.map(function (x) { return '<button data-v="' + x[1] + '" class="' + (x[1] === cur ? 'on' : '') + '">' + x[0] + '</button>'; }).join(' ');
+  [].forEach.call($(id).children, function (b) { b.onclick = function () { [].forEach.call($(id).children, function (x) { x.classList.toggle('on', x === b); }); fn(b.dataset.v); }; });
+}
+function mkChart(key, el, nShow) {
+  if (charts[key]) { charts[key].chart.remove(); }
+  el.innerHTML = '';
+  el.style.position = 'relative';
+  var ch = LightweightCharts.createChart(el, {width: el.clientWidth, height: el.clientHeight, layout: {background: {color: 'transparent'}, textColor: '#374151', fontSize: 11},
+    grid: {vertLines: {color: '#f3f4f6'}, horzLines: {color: '#f3f4f6'}}, rightPriceScale: {borderColor: '#e5e7eb'},
+    // ⚠ 間距在建圖當下用容器寬度算好：建完再 setVisibleLogicalRange 的話，圖還沒排版、寬度是 0，算出來的間距被夾到最小，
+    //   兩年的 K 棒會擠在右邊四分之一（預覽窗格隱藏時一定發生，手機上看時間差）。nShow＝一開始要看到幾根。
+    //   真正的原因：maxBarSpacing 沒給時上限＝圖寬的一半，建圖當下寬度還是 0 → 間距被夾到 minBarSpacing。給固定上限就好。
+    // 看盤軟體的時間軸：右邊釘在最新一根（放大、拖曳都不會拉出一片空白）、左邊釘在最舊一根、縮放以右邊為錨。
+    timeScale: {borderColor: '#e5e7eb', rightOffset: 3, minBarSpacing: 0.5, maxBarSpacing: 60, barSpacing: nShow ? Math.max(0.5, (el.clientWidth - 70) / (nShow + 3)) : 6,
+                fixLeftEdge: true, fixRightEdge: true, rightBarStaysOnScroll: true, lockVisibleTimeRangeOnResize: true},
+    crosshair: {mode: 0}, localization: {locale: 'zh-TW'}});
+  var lg = document.createElement('div');                      // 看盤軟體那種左上角資訊列，十字線移到哪就顯示哪一根
+  lg.style.cssText = 'position:absolute;left:6px;top:4px;z-index:3;font-size:12px;line-height:1.5;background:rgba(255,255,255,.85);padding:2px 6px;border-radius:4px;pointer-events:none;max-width:92%';
+  el.appendChild(lg);
+  charts[key] = {chart: ch, el: el, legend: lg};
+  return ch;
+}
+/** 等圖真的有寬度再設間距、捲到最新一根。建圖當下時間軸寬度是 0，那時設的間距會被夾到最小（預覽窗格隱藏時一定、手機上看時間差）。 */
+function zoomWhenReady(ch, nShow) {
+  var tries = 0;
+  (function go() {
+    var w = ch.timeScale().width();
+    if (w > 0) { ch.timeScale().applyOptions({barSpacing: Math.max(0.5, Math.min(60, w / (nShow + 3)))}); ch.timeScale().scrollToPosition(3, false); return; }   // 不要用 scrollToRealTime：它是動畫，畫面沒在重畫時會停在半路、最後幾根被切掉
+    if (++tries < 100) { setTimeout(go, 100); }
+  })();
+}
+function vfmt(v) { return v === null || v === undefined ? '—' : v >= 1e8 ? fmt(v / 1e8, 2) + '億' : v >= 1e4 ? fmt(v / 1e4, 1) + '萬' : fmt(v, 0); }
+function tkey(t) { if (typeof t === 'string' || typeof t === 'number') { return t; } var p = function (x) { return ('0' + x).slice(-2); }; return t.year + '-' + p(t.month) + '-' + p(t.day); }
+function aggregate(bars, per) {
+  if (per === 'D') { return bars; }
+  var out = [], cur = null;
+  bars.forEach(function (b) {
+    var key;
+    if (per === 'W') { var d = new Date(b[0] + 'T00:00:00Z'); key = new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 86400000).toISOString().slice(0, 10); }
+    else { key = b[0].slice(0, 7) + '-01'; }
+    if (!cur || cur[0] !== key) { cur = [key, b[1], b[2], b[3], b[4], b[5] || 0]; out.push(cur); }
+    else { cur[2] = Math.max(cur[2], b[2]); cur[3] = Math.min(cur[3], b[3]); cur[4] = b[4]; cur[5] += b[5] || 0; }
+  });
+  return out;
+}
+var MA = [[5, '#f59e0b'], [20, '#8b5cf6'], [60, '#2563eb']];
+/** 大量交易區（跟 src/stock_model.py 的 _vol_profile 同一套）：近 n 根切 bins 個價格格子、每根的量平均攤到它高低之間的格子，
+ *  量 ≥ 平均 1.5 倍且是左右鄰居裡最大的格子＝大量交易區。回 [{lo, hi, s(占量%)}]。 */
+function volZones(bars, n, bins) {
+  n = n || 120; bins = bins || 30;
+  var d = bars.slice(-n).filter(function (b) { return b[2] > 0 && b[3] > 0 && b[5] >= 0; });   // 跟 Python 一樣：先取最後 n 根、只丟掉缺值的
+  if (d.length < 30) { return []; }
+  var lo = Math.min.apply(null, d.map(function (b) { return b[3]; })), hi = Math.max.apply(null, d.map(function (b) { return b[2]; }));
+  if (!(hi > lo)) { return []; }
+  var step = (hi - lo) / bins, vol = [], tot = 0, i;
+  for (i = 0; i < bins; i++) { vol.push(0); }
+  var edge = function (k) { return lo + step * k; };
+  d.forEach(function (b) {
+    var a = 0, e = bins;
+    while (a < bins - 1 && edge(a + 1) <= b[3]) { a++; }          // searchsorted(edges, low, 'right') - 1
+    e = 0; while (e < bins && edge(e) < b[2]) { e++; }            // searchsorted(edges, high, 'left')
+    a = Math.max(0, Math.min(a, bins - 1)); e = Math.max(1, Math.min(e, bins)); if (e <= a) { e = a + 1; }
+    for (var k = a; k < e; k++) { vol[k] += b[5] / (e - a); }
+  });
+  vol.forEach(function (v) { tot += v; });
+  var mean = tot / bins, out = [];
+  for (i = 0; i < bins; i++) {
+    var nb = Math.max.apply(null, vol.slice(Math.max(0, i - 1), i + 2));
+    if (vol[i] >= 1.5 * mean && vol[i] === nb) { out.push({lo: edge(i), hi: edge(i + 1), s: vol[i] / tot * 100}); }
+  }
+  return out;
+}
+/** 把價格區間畫成灰底（放在 K 棒後面）。圖表捲動、縮放、改大小時跟著重畫。 */
+function grayBands(key, ch, series, zones) {
+  var c = charts[key]; if (!c || !zones || !zones.length) { return; }
+  c.el.style.zIndex = '0';                                        // 自己成一層，灰底的 z-index:-1 才會在圖後面、卡片白底前面
+  var box = document.createElement('div');
+  box.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:-1';
+  c.el.insertBefore(box, c.el.firstChild);
+  var draw = function () {
+    var w = ch.timeScale().width();
+    box.innerHTML = zones.map(function (z) {
+      var y1 = series.priceToCoordinate(z.hi), y2 = series.priceToCoordinate(z.lo);
+      if (y1 === null || y2 === null) { return ''; }
+      return '<div style="position:absolute;left:0;width:' + w + 'px;top:' + Math.min(y1, y2) + 'px;height:' + Math.max(2, Math.abs(y2 - y1)) + 'px;background:rgba(107,114,128,.18)"></div>';
+    }).join('');
+  };
+  ch.timeScale().subscribeVisibleLogicalRangeChange(function () { requestAnimationFrame(draw); });
+  c.redraw = draw;
+  [100, 400, 1200].forEach(function (ms) { setTimeout(draw, ms); });
+}
+function candles(key, el, bars, extra, view, zones) {
+  var ch = mkChart(key, el, Math.min(bars.length, view || 120)), lg = charts[key].legend;
+  var c = ch.addCandlestickSeries({upColor: '#d0021b', downColor: '#1a7f37', borderUpColor: '#d0021b', borderDownColor: '#1a7f37', wickUpColor: '#d0021b', wickDownColor: '#1a7f37'});
+  c.setData(bars.map(function (b) { return {time: b[0], open: b[1], high: b[2], low: b[3], close: b[4]}; }));
+  var v = ch.addHistogramSeries({priceFormat: {type: 'volume'}, priceScaleId: 'vol', lastValueVisible: false, priceLineVisible: false});
+  ch.priceScale('vol').applyOptions({scaleMargins: {top: 0.8, bottom: 0}});
+  v.setData(bars.map(function (b) { return {time: b[0], value: b[5], color: b[4] >= b[1] ? 'rgba(208,2,27,.35)' : 'rgba(26,127,55,.35)'}; }));
+  var mav = MA.map(function (m) {
+    var s = ch.addLineSeries({color: m[1], lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
+    var out = [], o = {};
+    for (var i = m[0] - 1; i < bars.length; i++) { var t = 0; for (var j = i - m[0] + 1; j <= i; j++) { t += bars[j][4]; } out.push({time: bars[i][0], value: t / m[0]}); o[bars[i][0]] = t / m[0]; }
+    s.setData(out);
+    return o;
+  });
+  var idx = {};
+  bars.forEach(function (b, i) { idx[b[0]] = i; });
+  var show = function (i) {
+    var b = bars[i]; if (!b) { return; }
+    var pc = i ? bars[i - 1][4] : b[1], ch1 = b[4] - pc, k = cls(ch1);
+    lg.innerHTML = '<b>' + esc(b[0]) + '</b>　開 ' + fmt(b[1], 2) + '　高 <span class="up">' + fmt(b[2], 2) + '</span>　低 <span class="down">' + fmt(b[3], 2)
+      + '</span>　收 <b class="' + k + '">' + fmt(b[4], 2) + '</b>　<span class="' + k + '">' + sgn(ch1, 2) + '（' + sgn(ch1 / pc * 100, 2) + '%）</span>　量 ' + vfmt(b[5])
+      + '<br>' + MA.map(function (m, j) { var x = mav[j][b[0]]; return '<span style="color:' + m[1] + '">MA' + m[0] + ' ' + (x ? fmt(x, 2) : '—') + '</span>'; }).join('　');
+  };
+  show(bars.length - 1);
+  ch.subscribeCrosshairMove(function (p) { show(p && p.time !== undefined && idx[tkey(p.time)] !== undefined ? idx[tkey(p.time)] : bars.length - 1); });
+  if (extra) { extra(ch, c); }
+  grayBands(key, ch, c, zones);
+  zoomWhenReady(ch, Math.min(bars.length, view || 120));
+  return ch;
+}
+var kBars = null, kPer = 'D', kSrc = '';
+function drawK() {
+  if (!kBars) { return; }
+  var b = aggregate(kBars, kPer);
+  var vz = volZones(kBars);                                     // 大量交易區用日 K 算（週、月 K 也畫同樣的價位）
+  candles('k', $('kchart'), b, null, {D: 120, W: 80, M: 60}[kPer], vz);
+  $('knote').textContent = kBars[0][0].slice(0, 4) + ' 起。往左拖看更早、兩指或滾輪縮放。灰底＝近 120 天的大量交易區（成交量集中的價位，常變成支撐或壓力）'
+    + (vz.length ? '' : '（這段期間量很平均，沒有）') + '；虛線＝最新收盤。';
+}
+function loadK(sym) {
+  kSym = sym; $('knote').textContent = '載入中…';
+  run('apiDaily', [sym], function (d) {
+    if (d.error) { $('knote').textContent = d.error; return; }
+    kBars = d.bars; kSrc = d.src || 'Yahoo'; drawK();
+  }, function (m) { $('knote').textContent = m; });
+}
+function loadIntra(kind) {
+  iKind = kind; $('inote').textContent = '載入中…';
+  run('apiIntraday', [kind], function (d) {
+    if (d.error) { $('inote').textContent = d.error; return; }
+    if (!d.ticks.length) { $('inote').textContent = '還沒開盤或今天沒有資料'; mkChart('i', $('ichart')); return; }
+    var day = new Date(), base = Date.UTC(day.getFullYear(), day.getMonth(), day.getDate()) / 1000, night = kind === 'TXN' && d.ticks.length && d.ticks[0][0].slice(0, 2) >= '15';   // 只有真的從 15:00 開始的才當夜盤處理，否則時間會倒序、圖表直接掛掉
+    // 圖上直接顯示台北時間。夜盤 15:00～隔天 05:00：凌晨的分鐘加一天，才會接在前一晚後面
+    var tt = function (s) { var h = parseInt(s.slice(0, 2), 10); return base + (night && h < 12 ? 86400 : 0) + h * 3600 + parseInt(s.slice(2, 4), 10) * 60; };
+    // 期交所夜盤收盤那一分鐘會出現 046000 跟 050000 兩筆（04:60＝05:00）→ 同一分鐘合併（量相加、收盤取後面那筆），圖表不能有重複時間
+    var mg = [];
+    d.ticks.forEach(function (t) { var p = mg[mg.length - 1]; if (p && tt(p[0]) === tt(t[0])) { p[2] = Math.max(p[2], t[2]); p[3] = Math.min(p[3], t[3]); p[4] = t[4]; p[5] = (p[5] || 0) + (t[5] || 0); } else { mg.push(t.slice()); } });
+    d.ticks = mg;
+    var ch = mkChart('i', $('ichart'), d.ticks.length), lg = charts.i.legend;
+    ch.applyOptions({timeScale: {timeVisible: true, secondsVisible: false}});
+    var line = ch.addLineSeries({color: '#111827', lineWidth: 2, priceLineVisible: false});
+    line.setData(d.ticks.map(function (t) { return {time: tt(t[0]), value: t[4]}; }));
+    var cv = 0, cw = 0, avg = [];
+    d.ticks.forEach(function (t) { var w = t[5] || 0; cv += t[4] * w; cw += w; avg.push({time: tt(t[0]), value: cw ? cv / cw : t[4]}); });
+    var a = ch.addLineSeries({color: '#f59e0b', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
+    a.setData(avg);
+    if (d.ref) { line.createPriceLine({price: d.ref, color: '#9ca3af', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '昨收'}); }
+    var v = ch.addHistogramSeries({priceFormat: {type: 'volume'}, priceScaleId: 'vol', lastValueVisible: false, priceLineVisible: false});
+    ch.priceScale('vol').applyOptions({scaleMargins: {top: 0.78, bottom: 0}});
+    v.setData(d.ticks.map(function (t, i) { var up = i ? t[4] >= d.ticks[i - 1][4] : t[4] >= t[1];
+      return {time: tt(t[0]), value: t[5], color: up ? 'rgba(208,2,27,.45)' : 'rgba(26,127,55,.45)'}; }));
+    var idx = {};
+    d.ticks.forEach(function (t, i) { idx[tt(t[0])] = i; });
+    var show = function (i) {
+      var t = d.ticks[i], k = d.ref ? cls(t[4] - d.ref) : '';
+      lg.innerHTML = '<b>' + (t[0] === '046000' ? '05:00' : t[0].slice(0, 2) + ':' + t[0].slice(2, 4)) + '</b>　價 <b class="' + k + '">' + fmt(t[4], 2) + '</b>'
+        + (d.ref ? '　<span class="' + k + '">' + sgn(t[4] - d.ref, 2) + '（' + sgn((t[4] / d.ref - 1) * 100, 2) + '%）</span>' : '')
+        + '　<span style="color:#d97706">均價 ' + fmt(avg[i].value, 2) + '</span>　量 ' + fmt(t[5], 0) + ' ' + esc(d.unit);
+    };
+    show(d.ticks.length - 1);
+    ch.subscribeCrosshairMove(function (p) { show(p && p.time !== undefined && idx[p.time] !== undefined ? idx[p.time] : d.ticks.length - 1); });
+    zoomWhenReady(ch, d.ticks.length);
+    var last = d.ticks[d.ticks.length - 1][4];
+    $('inote').innerHTML = (d.note ? '<span class="badge b-warn">' + esc(d.note) + '</span><br>' : '') + esc(d.name) + '：' + fmt(last, 2)
+      + (d.ref ? '　<span class="' + cls(last - d.ref) + '">' + sgn(last - d.ref, 2) + '（' + sgn((last / d.ref - 1) * 100, 2) + '%）</span>' : '')
+      + '<br>黑＝成交價、橘＝均價、柱＝每分鐘量（' + esc(d.unit) + '）' + (d.volNote ? '　⚠ ' + esc(d.volNote) : '');
+  }, function (m) { $('inote').textContent = m; });
+}
+function drawTrend() {
+  var m = D.meta || {}, t = [].concat(m.trend || []);
+  var lvl = m.level || '—';
+  var lc = lvl === '多頭正常' ? 'b-up' : m.inpos === '1' ? 'b-warn' : 'b-down';
+  $('trend').innerHTML = '<div class="row"><span class="mute">大盤循環</span><span class="badge ' + lc + '">' + esc(lvl) + '</span>'
+    + (m.inpos === '1' ? '' : '<span class="mute">（空手期：個股不開新倉）</span>') + '</div>'
+    + '<div class="row" style="margin-top:6px">' + t.map(function (s) {
+      var p = s.split('|'), st = p[1], simple = st === '多頭' ? '多頭' : st === '空頭' ? '空頭' : st === '—' ? '—' : '盤整';
+      var c = simple === '多頭' ? 'b-up' : simple === '空頭' ? 'b-down' : 'b-mute';
+      return '<span class="pill ' + c + '" style="font-size:13px;padding:3px 10px"><b>' + esc(p[0]) + '</b> ' + simple + (st !== simple && st !== '—' ? '（' + esc(st) + '）' : '')
+        + (p[2] === '1' ? '・回檔中' : '') + '</span>';
+    }).join('') + '</div>'
+    + more('頭頭高底底高＝多頭、頭頭低底底低＝空頭，其他算盤整（跟電腦版 ① 大盤同一個判斷）。<br>'
+    + t.map(function (s) { var p = s.split('|'); return p[3] ? esc(p[0]) + ' 前高 ' + fmt(num(p[3]), 0) + '／前低 ' + fmt(num(p[4]), 0) : ''; }).filter(Boolean).join('；'));
+}
+
+// ---------- 夜間資料
+function loadData() {
+  run('apiData', [], function (d) {
+    D = d; var m = d.meta || {};
+    var lvl = m.level || '—', good = lvl === '多頭正常';
+    $('hdr').innerHTML = '資料 ' + esc(m.date || '—') + '（' + esc(m.built || '') + ' 推）　大盤 <span class="badge ' + (good ? 'b-up' : m.inpos === '1' ? 'b-warn' : 'b-down') + '">' + esc(lvl) + '</span>';
+    $('lst-status').textContent = m.status || '';
+    $('lst').innerHTML = table(d.list, {link: true});
+    $('rsel').innerHTML = d.rank.map(function (r, i) { return '<option value="' + i + '">' + esc(r[0]) + '</option>'; }).join('');
+    drawRank(); drawAlerts(); drawRisk(); drawTrend();
+    var rs = num(m.risk_score);
+    if (rs !== null) { $('hdr').innerHTML += '　風險指數 <span class="badge ' + (rs <= (num(m.risk_lo) || 28) ? 'b-warn' : 'b-mute') + '">' + fmt(rs, 0) + '</span>'; }
+    $('hlist').innerHTML = (d.hidx || []).map(function (r) { return '<option value="' + esc(r[0]) + '">' + esc(r[1]) + '</option>'; }).join('');
+  }, function (msg) { $('hdr').textContent = '夜間資料讀不到：' + msg; });
+}
+function drawRisk() {
+  var m = D.meta || {}, sc = num(m.risk_score);
+  if (sc === null) { $('risk').innerHTML = '<span class="mute">（今晚還沒推上來）</span>'; return; }
+  var lo = num(m.risk_lo) || 28, hi = num(m.risk_hi) || 71, c = sc <= lo ? '#c2410c' : sc >= hi ? '#1d4ed8' : '#374151';
+  var g = [].concat(m.risk_g || []), ep = [].concat(m.risk_ep || []);
+  $('risk').innerHTML = '<div class="row"><span style="font-size:34px;font-weight:700;color:' + c + '">' + fmt(sc, 0) + '</span><span>／100　<b style="color:' + c + '">'
+    + esc(m.risk_zone) + '</b><br><span class="mute">2018 起只有 ' + fmt(num(m.risk_rank), 1) + '% 的日子比今天低（' + esc(m.risk_date) + '）</span></span></div>'
+    + '<div class="note">' + esc(m.risk_desc) + '</div>'
+    + (function () { var l = String(m.risk_lines || '').split('|'); if (l.length !== 2 || l[0] === '') { return ''; }
+        var pl = num(l[0]), ol = num(l[1]);
+        return '<div class="note">價格線 <b>' + fmt(pl, 0) + '</b>｜選擇權線 <b>' + fmt(ol, 0) + '</b>'
+          + (ol < pl - 15 ? '　選擇權比價格緊張：之後波動通常比較大' : pl < ol - 15 ? '　價格比選擇權差：選擇權還沒那麼怕' : '') + '</div>'; })()
+    + more('三群分數：' + g.map(esc).join('、') + (ep.length ? '<br>' + ep.map(esc).join('<br>') : '')
+      + '<br>拆成兩條：價格線＝離一年高點＋季線乖離；選擇權線＝隱含波動＋P/C。同樣分數下，選擇權線比價格線低的時候，之後 20 天波動年化平均高 4～5 個百分點（2004–14、2015–26 兩段都成立）；但會不會再跌 10% 兩段方向不一致，所以只說波動。'
+      + '<br>分數低＝之後波動大、跌超過 10% 的機率高（2015 起樣本外：最危險 1/5 之後跌 >10% 29.6%、最安全 1/5 8.0%），平均報酬沒有比較差；頭部當天平均約 72 分，不會事前預警。'
+      + (m.risk_live_from ? '<br>' + esc(m.risk_live_from) + ' 之前是研究版回算的（分位點用 2004–2025 定，屬於樣本內），之後是每晚實算。' : ''));
+  var rows = (D.risk || []).slice(1);
+  if (!rows.length) { return; }
+  var nView = Math.min(rows.length, 500);                       // 一開始看最近兩年，往左拖可以看到 2004
+  var ch = mkChart('r', $('rchart'), nView);
+  ch.applyOptions({leftPriceScale: {visible: true, borderColor: '#e5e7eb'}});
+  var s = ch.addBaselineSeries({baseValue: {type: 'price', price: lo}, priceScaleId: 'right', lineWidth: 2,
+    topLineColor: '#1d4ed8', topFillColor1: 'rgba(29,78,216,.15)', topFillColor2: 'rgba(29,78,216,.02)',
+    bottomLineColor: '#c2410c', bottomFillColor1: 'rgba(194,65,12,.02)', bottomFillColor2: 'rgba(194,65,12,.2)',
+    autoscaleInfoProvider: function () { return {priceRange: {minValue: 0, maxValue: 100}}; }});
+  s.setData(rows.map(function (r) { return {time: r[0], value: num(r[1])}; }));
+  s.createPriceLine({price: lo, color: '#c2410c', lineWidth: 1, lineStyle: 2, title: '最危險 1/5'});
+  s.createPriceLine({price: hi, color: '#1d4ed8', lineWidth: 1, lineStyle: 2, title: '最安全 1/5'});
+  var p = ch.addLineSeries({color: '#111827', lineWidth: 1, priceScaleId: 'left', priceLineVisible: false, lastValueVisible: false});
+  p.setData(rows.map(function (r) { return {time: r[0], value: num(r[2])}; }));
+  zoomWhenReady(ch, nView);
+
+  $('rnote2').textContent = '藍／橘＝風險指數（橘＝最危險 1/5），黑線＝加權。' + rows[0][0].slice(0, 4) + ' 起，往左拖看更早。';
+}
+var WRN = '只列單一分點（例如「凱基-信義」），總公司（元大證券、富邦證券…多半是自營或法人戶）和外資券商不列。'
+  + '分點勝率＝2023 年起，這個分點一天在一檔買超 ≥ 1,000 萬之後 10 個交易日收盤比較高的比例（同一檔連買只算第一天）；勝率樣本＝算了幾次，不到 30 次不標。全部事件平均 51%。⚠ 驗過延續性：用 2023–24 挑出勝率最高的 1/5 分點，到 2025–26 平均只有 50.4%、最低的 1/5 是 47.9%——過去勝率高<b>不代表之後準</b>，只能當參考，不要拿來選股。';
+var RNOTE = {'單一分點買權證 ≥ 1,000 萬': '近 5 個交易日、同一個分點在同一個標的的權證合計淨買；已排除發行商造市。' + WRN + '（勝率是那個分點買股票的紀錄）',
+  '單一分點買超 ≥ 1 億': '金額＝淨買張數 × 收盤價（富邦分點榜沒有均價）。' + WRN,
+  '關鍵分點連 3 天買': '同一個非隔日沖分點，連 3 個交易日都在這檔的買超前 15，3 天合計 ≥ 2,000 萬。' + WRN,
+  '3 日連漲且累計 > 7%': '連續 3 天收漲、3 天合計漲幅超過 7%（成交額 ≥ 2,000 萬）。',
+  '投信連 5 日買超': '最近 5 個交易日投信每天都買超，依 5 日買超金額排序。投本比＝投信近 60 日累計買超 ÷ 發行股數（投信沒有公布持股，用累計買超估；負的＝60 天內賣比買多）；5日變化＝這 5 天的買超占發行股數幾 %。'
+    + '領導法人＝近 5 日外資、投信、自營商誰買最多張：「是」＝投信買最多，「否（外資）」＝其實外資買更多。',
+  '外資連 5 日買超': '最近 5 個交易日外資每天都買超，依 5 日買超金額排序。外本比＝全體外資持股比率（證交所／櫃買中心公布的）；5日變化＝跟 5 個交易日前比多了幾個百分點。'
+    + '領導法人＝近 5 日外資、投信、自營商誰買最多張：「是」＝外資買最多。'};
+function drawRank() {
+  if (!D) { return; }
+  var r = D.rank[+$('rsel').value || 0] || ['', [['（沒有）']]];
+  $('rank').innerHTML = table(r[1], {link: true}); $('rnote').innerHTML = RNOTE[r[0]] || '';   // RNOTE 是寫死的說明（不是資料），可以用 innerHTML
+}
+var LV = {'高': '重要', '中': '留意', '低': '參考'};
+function drawAlerts() {
+  var rows = (D.alert || []).slice(1), by = {};
+  rows.forEach(function (r) { (by[r[0]] = by[r[0]] || []).push(r); });
+  var order = ['大盤風險', '多空轉變', '持股', '注意／處置', '籌碼異常'];
+  var tip = {'多空轉變': '昨天收盤跟前一天不一樣', '大盤風險': '', '持股': '賣出、警戒、已賺 20%', '注意／處置': '交易所公告，還沒到期的', '籌碼異常': '成交額前 300 與你的持股：外資連賣、投信大賣、融資暴增'};
+  $('alerts').innerHTML = order.map(function (k) {
+    var rs = by[k] || [];
+    return '<div class="card"><h2>' + k + ' <span class="badge b-mute">' + rs.length + '</span> <span class="mute" style="font-weight:400;font-size:12px">' + tip[k] + '</span></h2>'
+      + (rs.length ? '<div class="tbl"><table>' + rs.map(function (r) {
+        var b = r[4] === '高' ? 'b-up' : r[4] === '中' ? 'b-warn' : 'b-mute';
+        return '<tr><td><span class="badge ' + b + '" title="重要＝要動作；留意＝知道就好，不用急著動">' + esc(LV[r[4]] || r[4]) + '</span>' + (r[5] === '1' ? ' 🆕' : '') + '</td><td>' + (r[1] ? '<a href="#" onclick="goHealth(\'' + esc(r[1]) + '\');return false">' + esc(r[1]) + '</a> ' : '')
+          + esc(r[2]) + '</td><td style="white-space:normal">' + esc(k === '持股' ? shortVerdict(r[3]) : r[3]) + '</td></tr>';
+      }).join('') + '</table></div>' : '<div class="mute">（沒有）</div>') + '</div>';
+  }).join('') + '<div class="note">左邊的標籤：<b>重要</b>＝要動作（賣出、大盤空手期、你持有的轉空頭）；<b>留意</b>＝知道就好、不用急著動（例如 ETF 承接已觸發第幾批、大盤在修正中）。🆕＝今天第一次出現。</div>';
+}
+
+// ---------- 健診
+function health() {
+  var id = $('hid').value.trim(); if (!id) { return; }
+  $('hnote').textContent = '查詢中…'; $('hout').innerHTML = '';
+  // 健診跟日 K 同時抓（以前是健診回來才開始抓 K 線，多等一輪）；輸入的是名稱就只能等健診回來才知道代號
+  var kq = null, kwait = null, code = /^[0-9A-Z]{4,6}$/i.test(id) ? id.toUpperCase() : null;
+  var gotK = function (k) { kq = k; if (kwait) { kwait(k); } };
+  if (code) { run('apiDaily', [code], gotK, function () { gotK({error: 'K 線抓不到'}); }); }
+  run('apiHealth', [id], function (d) {
+    $('hnote').textContent = '';
+    if (d.error) { $('hout').innerHTML = '<div class="card err">' + esc(d.error) + '</div>'; return; }
+    var lv = d.live, live = lv ? '　現價 <b class="' + cls(lv.pct) + '">' + fmt(lv.price, 2) + '（' + sgn(lv.pct, 2) + '%）</b>' + (lv.lock ? ' <span class="badge b-down">' + esc(lv.lock) + '</span>' : '') + ' <span class="mute">' + esc(lv.src || '') + ' ' + esc(lv.time || '') + '</span>' : '';
+    var bc = d.buy[0] === '可以買' ? 'b-up' : d.buy[0] === '可以小量' ? 'b-warn' : 'b-mute';
+    var sc = /^(賣出|大盤空手期)/.test(d.sell) ? 'b-down' : /^(警戒|可留可換)/.test(d.sell) ? 'b-warn' : 'b-up';
+    var li = function (a) { return '<ul class="kv">' + a.map(function (x) { return '<li>' + esc(x[0]) + '：' + esc(x[1]) + '</li>'; }).join('') + '</ul>'; };
+    var zt = function (z) { return z.length ? '<table><tr><th class="n">價位</th><th class="n">距離</th><th>來源</th></tr>' + z.map(function (x) { return '<tr><td class="n">' + fmt(x.p, 2) + '</td><td class="n ' + cls(x.d) + '">' + sgn(x.d, 1) + '%</td><td style="white-space:normal">' + esc(x.s) + '</td></tr>'; }).join('') + '</table>' : '<div class="mute">（沒有）</div>'; };
+    var b = d.band, f = b.q10.length - 1;
+    $('hout').innerHTML = '<div class="card"><h2>' + esc(d.id + ' ' + d.name) + ' ' + trendBadge(d.trend) + (d.trend_since ? ' <span class="mute" style="font-weight:400;font-size:12px">' + esc(String(d.trend_since).slice(0, 10)) + ' 起</span>' : '') + ' <span class="mute" style="font-weight:400">' + esc(d.ind) + '｜昨收 ' + fmt(d.close, 2) + '（' + esc(d.date) + '）</span>' + live + '</h2>'
+      + '<div>' + d.facet.items.map(function (x) { return '<span class="pill ' + (x[1] ? 'b-up' : 'b-mute') + '">' + (x[1] ? '✓ ' : '✗ ') + esc(x[0]) + '</span>'; }).join('') + '</div>'
+      + '<div class="note">' + esc(d.facet.text) + '</div></div>'
+      + '<div class="grid4"><div class="card"><div class="mute">能不能買</div><div class="verdict"><span class="badge ' + bc + '">' + esc(d.buy[0]) + '</span></div><div>' + esc(d.buy[1]) + '</div></div>'
+      + '<div class="card"><div class="mute">停損</div><div>' + esc(d.stop) + '</div></div>'
+      + '<div class="card"><div class="mute">要不要賣</div><div class="verdict"><span class="badge ' + sc + '">' + esc(d.sell.split('：')[0]) + '</span></div><div class="' + vcls(d.sell) + '">' + esc(d.sell.split('：').slice(1).join('：')) + '</div>'
+      + '<ul class="kv">' + d.why.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul></div></div>'
+      + '<div class="card"><h2>K 線與未來 1 個月上下緣</h2><div id="hchart" class="chart sm"></div><div class="note">20 個交易日後收盤：八成落在 ' + fmt(b.q10[f], 2) + '～' + fmt(b.q90[f], 2)
+      + '、一半落在 ' + fmt(b.q25[f], 2) + '～' + fmt(b.q75[f], 2) + '；這段期間最高九成不超過 ' + fmt(b.hi90, 2) + '、最低九成不低於 ' + fmt(b.lo10, 2)
+      + '（' + esc(b.bucket) + '，日波動 ' + fmt(b.sig, 1) + '%；中線不是方向預測）<br>圖上：<span style="color:#1a7f37">綠虛線＝支撐</span>、<span style="color:#d0021b">紅虛線＝壓力</span>、'
+      + '跟著最後一根的虛線＝昨收、灰底＝近 120 日大量交易區、右邊灰色扇形＝未來 1 個月上下緣（外側虛線八成、實線一半、中間點線是中位數）'
+      + more('上下緣怎麼算：先用近期每天的漲跌估這檔現在的波動（EWMA，越近的日子權重越大，λ＝0.94），再乘上歷史上「同樣波動等級的股票、過 1／5／10／20 天實際漲跌」的分位數（2009–2016 全市場估、只分低中高三組波動）。'
+        + '<br>拿 2017–2020、2021–2026 沒用來估的期間驗證：說「八成落在裡面」的區間，實際 79.6%、79.8% 落在裡面；「一半」那條 50.5%。'
+        + '<br>它只說<b>會晃多大</b>，不說往哪邊：用均線上下、近 20 日強弱分組試過，中線往上或往下的方向在不同年代會反過來，所以中線固定在現價附近。') + '</div></div>'
+      + '<div class="card"><h2>策略</h2><div class="tbl"><table><tr><th>策略</th><th>用途</th><th>現在</th></tr>' + d.strats.map(function (s) { return '<tr><td>' + (s[3] ? '★ ' : '') + esc(s[0]) + '</td><td class="mute">' + esc(s[1]) + '</td><td style="white-space:normal">' + esc(s[2]) + '</td></tr>'; }).join('') + '</table></div></div>'
+      + '<div class="grid4"><div class="card"><h2>基本面</h2>' + li(d.fund) + '</div><div class="card"><h2>籌碼面</h2>' + li(d.chips) + '</div><div class="card"><h2>技術面</h2>' + li(d.tech) + '</div><div class="card"><h2>大盤</h2>' + li(d.mkt) + '</div></div>'
+      + '<div class="grid4"><div class="card"><h2>下方支撐</h2>' + zt(d.sup) + '</div><div class="card"><h2>上方壓力</h2>' + zt(d.res) + '</div></div>';
+    var drawHK = function (k) {
+      if (k.error) { $('hchart').innerHTML = '<div class="mute">' + esc(k.error) + '</div>'; return; }
+      candles('h', $('hchart'), k.bars, function (ch, cs) {
+        var add = function (key, color, style) {
+          var s = ch.addLineSeries({color: color, lineWidth: 1, lineStyle: style || 0, priceLineVisible: false, lastValueVisible: false});
+          s.setData([{time: k.bars[k.bars.length - 1][0], value: k.bars[k.bars.length - 1][4]}].concat(b.dates.map(function (t, i) { return {time: t, value: b[key][i]}; })));
+        };
+        add('q90', '#9ca3af', 2); add('q75', '#6b7280'); add('q50', '#9ca3af', 1); add('q25', '#6b7280'); add('q10', '#9ca3af', 2);
+        (d.sup || []).slice(0, 2).forEach(function (z) { cs.createPriceLine({price: z.p, color: '#1a7f37', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '支撐'}); });
+        (d.res || []).slice(0, 1).forEach(function (z) { cs.createPriceLine({price: z.p, color: '#d0021b', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '壓力'}); });
+      }, 110, d.vp && d.vp.length ? d.vp : volZones(k.bars));
+    };
+    if (code && code === d.id) { if (kq) { drawHK(kq); } else { kwait = drawHK; } }
+    else { run('apiDaily', [d.id], drawHK, function () {}); }
+  }, function (m) { $('hnote').textContent = m; });
+}
+
+// ---------- ETF
+var POP = ['0050', '006208', '0056', '00878', '00919', '00929', '00713', '00631L', '00632R', '00940'];
+function loadETF() {
+  $('etf').innerHTML = '<span class="mute">抓即時淨值…</span>';
+  run('apiETF', [], function (d) { ETF = d; drawETF(); }, function (m) { $('etf').innerHTML = '<span class="err">' + esc(m) + '</span>'; });
+}
+function drawETF() {
+  if (!ETF) { return; }
+  if (ETF.error) { $('etf').innerHTML = '<span class="err">' + esc(ETF.error) + '</span><div class="note">晚上電腦開機時不受影響；白天被擋就只能稍後再試。</div>'; return; }
+  var q = ($('efilter').value || '').trim(), rows = ETF.rows.slice();
+  rows.sort(function (a, b) { var i = POP.indexOf(a.id), j = POP.indexOf(b.id); return (i < 0 ? 99 : i) - (j < 0 ? 99 : j) || (a.id < b.id ? -1 : 1); });
+  if (q) { rows = rows.filter(function (r) { return r.id.indexOf(q) >= 0 || r.name.indexOf(q) >= 0; }); } else { rows = rows.slice(0, 40); }
+  var s = '<table><tr><th>代號</th><th>名稱</th><th class="n">市價</th><th class="n">預估淨值</th><th class="n">溢價%</th><th class="n">昨日淨值</th><th class="n">時間</th></tr>';
+  rows.forEach(function (r) {
+    s += '<tr><td>' + esc(r.id) + '</td><td>' + esc(r.name.slice(0, 18)) + '</td><td class="n">' + fmt(r.price, 2) + '</td><td class="n">' + fmt(r.nav, 2) + '</td><td class="n ' + cls(r.prem) + '"><b>' + sgn(r.prem, 2) + '</b></td><td class="n mute">' + fmt(r.prevNav, 2) + '</td><td class="n mute">' + esc(r.time) + '</td></tr>';
+  });
+  $('etf').innerHTML = s + '</table>' + (q ? '' : '<div class="note">只列常見的與前 40 檔，其他用上面篩選。</div>');
+}
+
+// ---------- 持股
+var H = null;
+function loadHold() {
+  $('hold').innerHTML = '<span class="mute">抓報價…</span>';
+  run('apiHoldings', [], function (d) { H = d; drawHold(); }, function (m) { $('hold').innerHTML = '<span class="err">' + esc(m) + '</span>'; });
+}
+/** 賣出＝綠字（台股綠是跌／賣）、警戒＝橘、續抱＝紅。 */
+function vcls(t) { t = String(t || ''); return /^(賣出|大盤空手期)/.test(t) ? 'down b' : /^(警戒|可留可換)/.test(t) ? 'warn' : /^續抱/.test(t) ? 'up' : 'mute'; }
+/** 頁面上只留一行短說明，細節收進「說明」（點開才看）。 */
+function more(html) { return '<details class="note"><summary>說明</summary>' + html + '</details>'; }
+/** 夜間判斷縮短：「賣出：收盤已連 18 天在 60 日線（9.49）之下（11-02 起…）」→「賣出｜60 日線 9.49 之下第 18 天」 */
+function shortVerdict(t) {
+  t = String(t || '');
+  var m = t.match(/^(賣出|警戒)：收盤已連 (\d+) 天在 60 日線（([\d,.]+)）之下/);
+  var pl = (t.match(/｜損益 [^｜]+$/) || [''])[0];
+  if (m) { return m[1] + '｜60 日線 ' + m[3] + ' 之下第 ' + m[2] + ' 天' + pl; }
+  m = t.match(/^續抱：.*?60 日線 ([\d,.]+)/);
+  if (m) { return '續抱｜60 日線 ' + m[1] + ' 之上'; }
+  return t.replace(/｜個股本身——/, '｜');
+}
+function trendBadge(st, small) {
+  var s3 = st === '多頭' ? '多頭' : st === '空頭' ? '空頭' : (!st || st === '—') ? '—' : '盤整';
+  var c = s3 === '多頭' ? 'b-up' : s3 === '空頭' ? 'b-down' : 'b-mute';
+  return '<span class="badge ' + c + '"' + (small ? ' title="' + esc(st || '') + '"' : ' style="font-size:13px;padding:2px 10px"') + '>' + s3 + (!small && st && st !== s3 && st !== '—' ? '（' + esc(st) + '）' : '') + '</span>';
+}
+var HEDIT = false;
+function holdBtns() {
+  $('holdbtns').innerHTML = HEDIT ? '<button class="ghost" onclick="addRow()">＋ 新增一列</button> <button class="act" onclick="saveHold()">儲存</button> <button class="ghost" onclick="HEDIT=false;loadHold()">取消</button>'
+    : '<button class="ghost" onclick="HEDIT=true;drawHold()">編輯</button>';
+}
+function drawHold() {
+  var rows = (H.rows || []).slice(1), q = H.quotes || {}, v = H.verdict || {};
+  var tot = 0, cost = 0;
+  holdBtns();
+  if (HEDIT) {
+    var e = '<table><tr><th>代號</th><th>名稱</th><th>帳戶</th><th class="n">股數</th><th class="n">成本</th><th>備註</th><th></th></tr>';
+    rows.forEach(function (r, i) {
+      var inp = function (k, w, right) { return '<input value="' + esc(r[k] || '') + '" style="width:' + w + 'px' + (right ? ';text-align:right' : '') + '" data-i="' + i + '" data-k="' + k + '">'; };
+      e += '<tr><td>' + inp(0, 72) + '</td><td>' + inp(1, 120) + '</td><td>' + inp(2, 64) + '</td><td class="n">' + inp(3, 80, true) + '</td><td class="n">' + inp(4, 80, true) + '</td><td>' + inp(5, 110)
+        + '</td><td><button class="ghost" onclick="delRow(' + i + ')">刪</button></td></tr>';
+    });
+    $('hold').innerHTML = e + '</table>';
+    [].forEach.call($('hold').querySelectorAll('input'), function (el) { el.onchange = function () { H.rows[+el.dataset.i + 1][+el.dataset.k] = el.value; }; });
+    drawPnl();
+    return;
+  }
+  var s = '<table class="hold"><tr><th>標的</th><th class="n hm">股數</th><th class="n hm">成本</th><th class="n">現價</th><th class="n">今日%</th><th class="n">損益%</th><th class="n hm">損益</th><th class="n hm">市值</th><th>多空</th></tr>';
+  rows.forEach(function (r, ri) {
+    var p = q[r[0]] || {}, n = num(r[3]), c = num(r[4]), pr = p.price, pl = pr && c ? (pr / c - 1) * 100 : null;
+    if (pr && n) { tot += pr * n; } if (c && n) { cost += c * n; }
+    var vv = v[r[0]] || {}, lk = String(p.lock || ''), lc = /跌停/.test(lk) ? ' lock-dn' : /漲停/.test(lk) ? ' lock-up' : '';
+    s += '<tr class="h1"><td class="nm"><button class="ghost sell" onclick="sellForm(' + (ri + 1) + ')" title="記一筆賣出">賣</button> <b>' + esc(r[0]) + '</b> ' + esc(r[1] || vv.name || '') + '<small>' + esc(r[2] || '') + '</small></td>'
+      + '<td class="n hm">' + fmt(n, 0) + '</td><td class="n hm">' + fmt(c, 2) + '</td>'
+      + '<td class="n' + lc + '"' + (lk ? ' title="' + esc(lk) + '"' : '') + '>' + fmt(pr, 2) + '</td><td class="n ' + cls(p.pct) + '">' + sgn(p.pct, 2) + '</td>'
+      + '<td class="n ' + cls(pl) + '"><b>' + sgn(pl, 1) + '</b></td><td class="n hm ' + cls(pl) + '">' + sgn(pr && n && c ? (pr - c) * n : null, 0) + '</td>'
+      + '<td class="n hm">' + fmt(pr && n ? pr * n : null, 0) + '</td><td>' + (vv.trend ? trendBadge(vv.trend, true) : '<span class="mute">—</span>') + '</td></tr>'
+      + '<tr class="h2"><td colspan="9" class="' + vcls(vv.sell) + '" title="' + esc(vv.sell || '') + '">' + esc(vv.sell ? shortVerdict(vv.sell) : '（今晚才會算）') + (r[5] ? '<span class="mute">｜' + esc(r[5]) + '</span>' : '') + '</td></tr>'
+      + '<tr class="sellrow hide" id="sell' + (ri + 1) + '"><td colspan="9"></td></tr>';
+  });
+  $('hold').innerHTML = s + '</table><div class="note">合計：市值 ' + fmt(tot, 0) + '、成本 ' + fmt(cost, 0) + '、未實現 <b class="' + cls(tot - cost) + '">' + sgn(tot - cost, 0)
+    + '（' + sgn(cost ? (tot / cost - 1) * 100 : null, 1) + '%）</b>（現價算、沒扣賣出費用）</div>';
+  drawPnl();
+}
+function drawPnl() {
+  var rows = (H.pnl || []).slice(1), m = H.meta || {};
+  if (!rows.length) { $('pnl').innerHTML = '<span class="mute">還沒有損益資料：把券商匯出的對帳單、已實現、未實現（國泰）跟 e起發 的檔放進電腦的 inbox_broker 資料夾，晚上會自動算。</span>'; return; }
+  var tot = num(m.pnl_total), ap = num(m.pnl_acct_pct), tp = num(m.pnl_taiex_pct);
+  var card = function (k, v, sub) { return '<div class="card" style="margin:0;padding:8px 12px"><div class="mute" style="font-size:12px">' + k + '</div><div style="font-size:18px;font-weight:700" class="' + cls(v) + '">' + sgn(v, 0) + '</div>' + (sub ? '<div class="mute" style="font-size:12px">' + sub + '</div>' : '') + '</div>'; };
+  $('pnl').innerHTML = '<div class="grid4" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">'
+    + card('總損益', tot, '報酬 <b class="' + cls(ap) + '">' + sgn(ap, 2) + '%</b>｜大盤 <b class="' + cls(tp) + '">' + sgn(tp, 2) + '%</b>')
+    + card('已實現', num(m.pnl_realized) + num(m.pnl_dividend), '含股利 ' + fmt(num(m.pnl_dividend), 0))
+    + card('未實現', num(m.pnl_unrealized) + num(m.pnl_esun_unrealized), '國泰 ' + sgn(num(m.pnl_unrealized), 0) + '｜e起發 ' + sgn(num(m.pnl_esun_unrealized), 0))
+    + card('當日', num(m.pnl_today), esc(m.pnl_date || '')) + '</div>'
+    + '<div id="pchart" class="chart" style="margin-top:8px"></div><div id="dchart" class="chart sm"></div>'
+    + '<div class="note">黑＝總損益、藍＝已實現、橘＝未實現、灰＝加權（左軸）；下面是當日損益。</div>'
+    + more('從 ' + esc(m.pnl_start || '') + ' 第一筆交易起，用' + (m.pnl_esun_in_chart ? '國泰＋e起發兩個帳號' : '國泰') + '的對帳單重建、每晚用收盤重算；現金股利是推算的。'
+      + (m.pnl_esun_in_chart ? '' : 'e起發 沒有交易歷史，只算進上面的合計。') + '報酬＝總損益 ÷ 100 萬（沒投進去的現金也算），跟「100 萬全買大盤」比才公平。'
+      + [].concat(m.pnl_check || []).map(function (x) { return '<br>對帳：' + esc(x); }).join(''));
+  var el = $('pchart'), ch = mkChart('p', el, rows.length), lg = charts.p.legend;
+  ch.applyOptions({leftPriceScale: {visible: true, borderColor: '#e5e7eb'}});
+  var tw = ch.addLineSeries({color: '#9ca3af', lineWidth: 1, priceScaleId: 'left', priceFormat: {type: 'price', precision: 0, minMove: 1}, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
+  tw.setData(rows.map(function (r) { return {time: r[0], value: num(r[5])}; }));
+  var line = function (k, color, w) { var s = ch.addLineSeries({color: color, lineWidth: w, priceFormat: {type: 'price', precision: 0, minMove: 1}, priceLineVisible: false}); s.setData(rows.map(function (r) { return {time: r[0], value: num(r[k])}; })); return s; };
+  var t = line(3, '#111827', 2); line(1, '#2563eb', 1); line(2, '#f59e0b', 1);   // 不用紅綠：台股紅綠是漲跌
+  t.createPriceLine({price: 0, color: '#9ca3af', lineWidth: 1, lineStyle: 2, axisLabelVisible: false});
+  var idx = {}; rows.forEach(function (r, i) { idx[r[0]] = i; });
+  var show = function (i) { var r = rows[i]; lg.innerHTML = '<b>' + esc(r[0]) + '</b>　總 <b class="' + cls(num(r[3])) + '">' + sgn(num(r[3]), 0) + '</b>　<span style="color:#2563eb">已實現 ' + sgn(num(r[1]), 0)
+    + '</span>　<span style="color:#d97706">未實現 ' + sgn(num(r[2]), 0) + '</span>　當日 <span class="' + cls(num(r[4])) + '">' + sgn(num(r[4]), 0) + '</span>　加權 ' + fmt(num(r[5]), 0)
+    + '<br>帳戶 ' + sgn(num(r[6]), 2) + '%（÷100 萬）　大盤 ' + sgn(num(r[7]), 2) + '%'; };
+  show(rows.length - 1);
+  ch.subscribeCrosshairMove(function (p) { show(p && p.time !== undefined && idx[tkey(p.time)] !== undefined ? idx[tkey(p.time)] : rows.length - 1); });
+  zoomWhenReady(ch, rows.length);
+  var dc = mkChart('d', $('dchart'), rows.length);
+  var h = dc.addHistogramSeries({priceFormat: {type: 'price', precision: 0, minMove: 1}, priceLineVisible: false});
+  h.setData(rows.map(function (r) { var v = num(r[4]); return {time: r[0], value: v, color: v >= 0 ? 'rgba(208,2,27,.7)' : 'rgba(26,127,55,.7)'}; }));
+  charts.d.legend.innerHTML = '當日損益（元）';
+  zoomWhenReady(dc, rows.length);
+  // 上下兩張圖一起捲動、縮放
+  var sync = function (a, b) { a.timeScale().subscribeVisibleLogicalRangeChange(function (r) { if (r) { b.timeScale().setVisibleLogicalRange(r); } }); };
+  sync(ch, dc); sync(dc, ch);
+}
+/** 「賣」：第 i 列（H.rows 的索引）下面展開一列，填股數（預設全部）、成交價（預設現價），按確定才送。 */
+function sellForm(i) {
+  var r = H.rows[i], el = $('sell' + i); if (!r || !el) { return; }
+  if (!el.classList.contains('hide')) { el.classList.add('hide'); return; }
+  var p = (H.quotes || {})[r[0]] || {}, n = num(r[3]);
+  el.firstChild.innerHTML = '<div class="row" style="padding:6px 0"><b>賣出 ' + esc(r[0]) + ' ' + esc(r[1] || '') + '</b>'
+    + '<label>股數 <input id="sq' + i + '" type="number" inputmode="numeric" min="1" value="' + (n || '') + '" style="width:100px;text-align:right"></label>'
+    + '<label>成交價 <input id="sp' + i + '" type="number" inputmode="decimal" step="0.01" value="' + (p.price ? Number(p.price).toFixed(2) : '') + '" style="width:100px;text-align:right"></label>'
+    + '<button class="act" onclick="doSell(' + i + ')">確定賣出</button> <button class="ghost" onclick="sellForm(' + i + ')">取消</button>'
+    + '<span class="note" id="sn' + i + '">持有 ' + fmt(n, 0) + ' 股；賣光這一列會刪掉，另外記進試算表的「賣出紀錄」</span></div>';
+  el.classList.remove('hide');
+}
+function doSell(i) {
+  var r = H.rows[i], q = num($('sq' + i).value), p = num($('sp' + i).value), n = num(r[3]);
+  if (!(q > 0) || !(p > 0)) { $('sn' + i).textContent = '股數和成交價都要填'; return; }
+  if (n && q > n) { $('sn' + i).textContent = '只有 ' + fmt(n, 0) + ' 股'; return; }
+  if (!confirm('賣出 ' + r[0] + ' ' + fmt(q, 0) + ' 股，成交價 ' + fmt(p, 2) + '？')) { return; }
+  $('sn' + i).textContent = '儲存中…';
+  run('apiSell', [i, r[0], q, p], function (x) {
+    $('holdnote').textContent = '已記：賣 ' + x.id + ' ' + fmt(x.shares, 0) + ' 股 @ ' + fmt(x.price, 2) + (x.pnl !== null ? '，損益 ' + sgn(x.pnl, 0) + '（未扣費稅）' : '') + (x.left > 0 ? '，剩 ' + fmt(x.left, 0) + ' 股' : '，已賣光');
+    loadHold();
+  }, function (m) { $('sn' + i).textContent = m; });
+}
+function addRow() { if (!H) { return; } HEDIT = true; H.rows.push(['', '', '', '', '', '']); drawHold(); }
+function delRow(i) { H.rows.splice(i + 1, 1); drawHold(); }
+function saveHold() {
+  $('holdnote').textContent = '儲存中…';
+  run('apiSaveHoldings', [H.rows.slice(1)], function (r) { $('holdnote').textContent = '已存 ' + r.n + ' 檔'; HEDIT = false; loadHold(); }, function (m) { $('holdnote').textContent = m; });
+}
+
+function refreshAll() { loadData(); loadMarket(); loadK(kSym); loadIntra(iKind); if (!$('t-ETF').classList.contains('hide')) { loadETF(); } if (!$('t-持股').classList.contains('hide')) { loadHold(); } }
+function trading() { var d = new Date(), w = d.getDay(), m = d.getHours() * 60 + d.getMinutes(); return w > 0 && w < 6 && m >= 525 && m <= 830; }
+window.onload = function () {
+  if (!KEY) { document.querySelector('main').innerHTML = '<div class="card">這台瀏覽器還沒有鑰匙：請用信裡最下面的連結（或電腦 data/apps_script/網頁網址.txt 裡的網址）開一次，之後存書籤就好。</div>'; return; }
+  if (!H) { H = {rows: [['代號', '股數', '成本', '備註']]}; }
+  initTabs();
+  seg('kseg', [['台股加權', '^TWII'], ['那斯達克', '^IXIC'], ['費半', '^SOX']], kSym, loadK);
+  seg('pseg', [['日', 'D'], ['週', 'W'], ['月', 'M']], kPer, function (v) { kPer = v; drawK(); });
+  seg('iseg', [['現貨', 'TSE'], ['期指日盤', 'TXF'], ['期指夜盤', 'TXN']], iKind, loadIntra);
+  loadData(); loadMarket(); loadK(kSym); loadIntra(iKind);
+  setInterval(function () { if (trading() && !document.hidden) { loadMarket(); loadIntra(iKind); } }, 120000);
+  window.onresize = function () { Object.keys(charts).forEach(function (k) { var c = charts[k]; if (c.el.offsetWidth) { c.chart.applyOptions({width: c.el.clientWidth}); if (c.redraw) { setTimeout(c.redraw, 50); } } }); };
+};
+</script>
+</body>
+</html>
